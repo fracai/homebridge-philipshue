@@ -63,6 +63,7 @@ function PhilipsHueAccessory(log, device, api) {
   this.device = device;
   this.api = api;
   this.log = log;
+  this.manufacturername = device.manufacturername;
 }
 
 // Get the ip address of the first available bridge with meethue.com or a network scan.
@@ -233,6 +234,9 @@ PhilipsHueAccessory.prototype = {
           state.on();
         }
         else {
+    	  if (this.manufacturername == "OSRAM") {
+            state.transitionInstant();
+          }
           state.off();
         }
         break;
@@ -346,7 +350,7 @@ PhilipsHueAccessory.prototype = {
 	var informationService = new Service.AccessoryInformation();
 
 	informationService
-		.setCharacteristic(Characteristic.Manufacturer, "Philips")
+		.setCharacteristic(Characteristic.Manufacturer, this.manufacturername)
 		.setCharacteristic(Characteristic.Model, this.model)
 		.setCharacteristic(Characteristic.SerialNumber, this.device.uniqueid)
 		.addCharacteristic(Characteristic.FirmwareRevision, this.device.swversion);

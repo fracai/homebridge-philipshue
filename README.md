@@ -17,7 +17,8 @@ Configuration sample:
           "platform": "PhilipsHue",
           "name": "Philips Hue",
           "ip_address": "127.0.0.1",
-          "username": "252deadbeef0bf3f34c7ecb810e832f"
+          "username": "252deadbeef0bf3f34c7ecb810e832f",
+          "excludephilips": false
         }   
     ]
 

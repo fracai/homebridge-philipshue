@@ -50,6 +50,11 @@ function PhilipsHuePlatform(log, config) {
   this.log = log;
   this.ip_address = config["ip_address"];
   this.username = config["username"];
+  this.excludephilips = config["excludephilips"];
+
+  if (typeof this.excludephilips === "undefined") {
+    this.excludephilips = false;
+  }
   
   this.log("PhilipsHue Platform Plugin Version " + this.getVersion());
   
@@ -135,6 +140,11 @@ PhilipsHuePlatform.prototype = {
         for (var deviceId in response.lights) {
           var device = response.lights[deviceId];
           device.id = deviceId;
+
+          if (that.excludephilips && device.manufacturername == "Philips") {
+            continue;
+          }
+
           var accessory = new PhilipsHueAccessory(that.log, device, api);
           foundAccessories.push(accessory);
         }

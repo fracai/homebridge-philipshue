@@ -42,7 +42,7 @@ module.exports = function(homebridge) {
   Service = homebridge.hap.Service;
   Characteristic = homebridge.hap.Characteristic;
   
-  homebridge.registerPlatform("homebridge-philipshue2", "PhilipsHue2", PhilipsHuePlatform);
+  homebridge.registerPlatform(homebridge-philipshue", "PhilipsHue", PhilipsHuePlatform;
 }
 
 

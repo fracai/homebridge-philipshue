@@ -42,7 +42,7 @@ module.exports = function(homebridge) {
   Service = homebridge.hap.Service;
   Characteristic = homebridge.hap.Characteristic;
   
-  homebridge.registerPlatform("homebridge-philipshue", "PhilipsHue", PhilipsHuePlatform);
+  homebridge.registerPlatform("homebridge-philipshue2", "PhilipsHue2", PhilipsHuePlatform);
 }
 
 
@@ -69,10 +69,15 @@ function PhilipsHueAccessory(log, device, api) {
   this.api = api;
   this.log = log;
   this.manufacturername = device.manufacturername;
+  //this.service = this.getServices();
   this.on = false;
   this.hue = 0;
   this.bri = 0;
   this.sat = 0;
+  this.changedHue = false;
+  this.changedSat = false;
+  this.changedBri = false;
+
 }
 
 // Get the ip address of the first available bridge with meethue.com or a network scan.
@@ -239,6 +244,7 @@ PhilipsHueAccessory.prototype = {
   // Create and set a light state
   executeChange: function(characteristic, value, callback) {
     var state = lightState.create();
+
     switch(characteristic.toLowerCase()) {
       case 'identify':
         state.alert('select');
@@ -246,36 +252,54 @@ PhilipsHueAccessory.prototype = {
       case 'power':
         if (value) {
           state.on();
-          if (this.device.state.hasOwnProperty('hue') && this.device.state.hasOwnProperty('sat')){
-          	if(this.arcDegreesToHue(this.hue) != getState("hue",callback)){
-        	state.hue(this.arcDegreesToHue(this.hue));
-          }
-          if(this.sat != getState("sat",callback)){
-        	state.hue(this.arcDegreesToHue(this.hue));
-          }
-          }
-          
-          if(this.bri != getState("bri",callback)){
-        	state.hue(this.arcDegreesToHue(this.hue));
-          }
+
+            if(this.on==false) {
+
+
+              if (this.device.state.hasOwnProperty('hue') && this.device.state.hasOwnProperty('sat')) {
+                if (this.changedHue == true) {
+                  state.hue(this.arcDegreesToHue(this.hue));
+                  this.changedHue = false;
+                }
+                if (this.changedSat == true) {
+                  state.saturation(this.sat);
+                  this.changedSat = false;
+                }
+              }
+
+              if (this.changedBri == true) {
+                state.brightness(this.bri);
+                this.changedBri = false;
+              }
+            }
+          this.on=true;
           
         }
         else {
     	  if (this.manufacturername == "OSRAM") {
             state.transitionInstant();
           }
+
+
           state.off();
+          this.on = false;
         }
         break;
       case 'hue':
-      	this.hue = value;
+        this.changedHue = true;
+        this.hue = value;
+
         state.hue(this.arcDegreesToHue(value));
         break;
       case 'brightness':
+        this.changedBri = true;
+
       	this.bri = value;
         state.brightness(value);
         break;
       case 'saturation':
+        this.changedSat = true;
+
       	this.sat = value;
         state.saturation(value);
         break;
@@ -294,9 +318,12 @@ PhilipsHueAccessory.prototype = {
           setTimeout(function() {
             this.executeChange(characteristic, value, callback);
           }.bind(this), 300);
-        } else {
-          this.log(err);
-          this.log("Will set values to hue: "+this.hue+"   bri: "+this.bri+"     sat: "+this.sat);
+        } else if (err.type == 201){
+          this.log("Will set values to hue: " + this.hue + "   bri: " + this.bri + "     sat: " + this.sat);
+          this.on = false;
+          callback();
+        }else{
+         this.log(err);
           callback(new Error(err));
         }
       }

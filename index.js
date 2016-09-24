@@ -38,10 +38,10 @@ var path = require('path');
 var Service, Characteristic;
 
 module.exports = function(homebridge) {
- 
+
   Service = homebridge.hap.Service;
   Characteristic = homebridge.hap.Characteristic;
-  
+
   homebridge.registerPlatform("homebridge-philipshue", "PhilipsHue", PhilipsHuePlatform);
 }
 
@@ -51,14 +51,52 @@ function PhilipsHuePlatform(log, config) {
   this.ip_address = config["ip_address"];
   this.username = config["username"];
   this.excludephilips = config["excludephilips"];
-
+  this.deviceLookup = {};
   if (typeof this.excludephilips === "undefined") {
     this.excludephilips = false;
   }
-  
+
   this.log("PhilipsHue Platform Plugin Version " + this.getVersion());
-  
-    
+  var that = this;
+  setInterval(function() {
+      var api = new HueApi(that.ip_address, that.username);
+      api.fullState(function(err, response) {
+        if (err) throw err;
+        for (var deviceId in response.lights) {
+
+           var accessory = that.deviceLookup[deviceId];
+
+           if (accessory !== null) {
+             accessory.device = response.lights[deviceId];
+             var device = accessory.device;
+
+             var newpow = accessory.extractValue("power", device);
+             var newbri = accessory.extractValue("brightness", device);
+             var newsat = accessory.extractValue("saturation", device);
+             var newhue = accessory.extractValue("hue", device);
+
+             if (accessory.cache.power !== newpow ||
+                 accessory.cache.brightness !== newbri ||
+                 (!isNaN(newsat) &&  accessory.cache.saturation !== newsat) ||
+                 (!isNaN(newhue) &&  accessory.cache.hue !== newhue)) {
+                 accessory.cache.power = newpow;
+                 accessory.cache.brightness = newbri;
+                 accessory.cache.saturation = newsat;
+                 accessory.cache.hue = newhue;
+
+                 if (accessory.services.length > 0) {
+                   for (var i = 0; i < accessory.services[1].characteristics.length; i++) {
+                      accessory.services[1].characteristics[i].getValue();
+                   }
+                 }
+
+             }
+           }
+        }
+     });
+  }, 10000);
+
+
 }
 
 function PhilipsHueAccessory(log, device, api) {
@@ -68,6 +106,8 @@ function PhilipsHueAccessory(log, device, api) {
   this.device = device;
   this.api = api;
   this.log = log;
+  this.cache = {};
+  this.services = [];
   this.manufacturername = device.manufacturername;
   //this.service = this.getServices();
   this.on = false;
@@ -155,25 +195,34 @@ PhilipsHuePlatform.prototype = {
           }
 
           var accessory = new PhilipsHueAccessory(that.log, device, api);
+          accessory.cache.power = accessory.extractValue("power", device);
+          accessory.cache.brightness = accessory.extractValue("brightness", device);
+          accessory.cache.saturation = accessory.extractValue("saturation", device);
+          accessory.cache.hue = accessory.extractValue("hue", device);
+          that.deviceLookup[device.id] = accessory;
           foundAccessories.push(accessory);
         }
+
         callback(foundAccessories);
 
+
+
       });
-    };
+     };
+
 
     // Create a new user if needed
     function checkUsername() {
       if (!that.username) {
         var api = new HueApi(that.ip_address);
         api.createUser(that.ip_address, null, null, function(err, user) {
-          
+
           // try and help explain this particular error
           if (err && err.message == "link button not pressed")
             throw "Please press the link button on your Philips Hue bridge, then start the HomeBridge server within 30 seconds.";
-          
+
           if (err) throw err;
-            
+
           throw "Created a new username " + JSON.stringify(user) + " for your Philips Hue. Please add it to your config.json then start the HomeBridge server again: ";
         });
       }
@@ -196,16 +245,19 @@ PhilipsHuePlatform.prototype = {
       checkUsername();
     }
   } ,
-  
+
   getVersion: function() {
   var pjPath = path.join(__dirname, './package.json');
   var pj = JSON.parse(fs.readFileSync(pjPath));
   return pj.version;
-}  
-  
+}
+
 };
 
 PhilipsHueAccessory.prototype = {
+
+
+
   // Convert 0-65535 to 0-360
   hueToArcDegrees: function(value) {
     value = value/65535;
@@ -230,7 +282,7 @@ PhilipsHueAccessory.prototype = {
   extractValue: function(characteristic, status) {
     switch(characteristic.toLowerCase()) {
       case 'power':
-        return status.state.reachable && status.state.on ? 1 : 0;
+        return (status.state.reachable && status.state.on);
       case 'hue':
         return this.hueToArcDegrees(status.state.hue);
       case 'brightness':
@@ -329,80 +381,46 @@ PhilipsHueAccessory.prototype = {
       }
     }.bind(this));
   },
-  // Read light state
-  // TODO: implement clever polling/update and caching
-  //       maybe a better NodeJS hue API exists for this
-  getState: function(characteristic, callback) {
-    this.api.lightStatus(this.id, function(err, status) {
-      if (callback == null) {
-      	return;
-      }
-      
-      if (err) {
-        if (err.code == "ECONNRESET") {
-          setTimeout(function() {
-            this.getState(characteristic, callback);
-          }.bind(this), 300);
-        } else {
-          this.log(err);
-          callback(new Error(err));
-        }
-      }
-      
-      else {
-        var newValue = this.extractValue(characteristic, status);
-        if (newValue != undefined) {
-          callback(null, newValue);
-        } else {
-          //  this.log("Device " + that.device.name + " does not support reading characteristic " + characteristic);
-          //  callback(Error("Device " + that.device.name + " does not support reading characteristic " + characteristic) );
-        }
 
-        callback = null;
-		
-        //this.log("Get " + that.device.name + ", characteristic: " + characteristic + ", value: " + value + ".");
-      }
-    }.bind(this));
-  },
-  
   // Respond to identify request
-  identify: function(callback) { 
-  	this.executeChange("identify", true, callback); 
+  identify: function(callback) {
+  	this.executeChange("identify", true, callback);
   },
 
   // Get Services
   getServices: function() {
-    var that = this;
-    
+
+   if (this.services.length > 0) {
+      return this.services;
+   }
+
+  var that = this;
+
     // Use HomeKit types defined in HAP node JS
 	var lightbulbService = new Service.Lightbulb(this.name);
 
 	// Basic light controls, common to Hue and Hue lux
 	lightbulbService
 	.getCharacteristic(Characteristic.On)
-	.on('get', function(callback) { that.getState("power", callback);})
-	.on('set', function(value, callback) { that.executeChange("power", value, callback);})
-    .value = this.extractValue("power", this.device);
+	.on('get', function(callback) { callback(null, that.cache.power); })
+	.on('set', function(value, callback) { that.executeChange("power", value, callback);});
 
 	lightbulbService
 	.addCharacteristic(Characteristic.Brightness)
-	.on('get', function(callback) { that.getState("brightness", callback);})
-	.on('set', function(value, callback) { that.executeChange("brightness", value, callback);})
-    .value = this.extractValue("brightness", this.device);
+	.on('get', function(callback) { callback(null, that.cache.brightness); })
+	.on('set', function(value, callback) { that.executeChange("brightness", value, callback);});
 
 	// Handle the Hue/Hue Lux divergence
 	if (this.device.state.hasOwnProperty('hue') && this.device.state.hasOwnProperty('sat')) {
 		lightbulbService
 		.addCharacteristic(Characteristic.Hue)
-		.on('get', function(callback) { that.getState("hue", callback);})
-		.on('set', function(value, callback) { that.executeChange("hue", value, callback);})
-        .value = this.extractValue("hue", this.device);
+		.on('get', function(callback) { callback(null, that.cache.hue); })
+		.on('set', function(value, callback) { that.executeChange("hue", value, callback);});
 
 		lightbulbService
 		.addCharacteristic(Characteristic.Saturation)
-		.on('get', function(callback) { that.getState("saturation", callback);})
-		.on('set', function(value, callback) { that.executeChange("saturation", value, callback);})
-        .value = this.extractValue("saturation", this.device);
+		.on('get', function(callback) { callback(null, that.cache.saturation); })
+		.on('set', function(value, callback) { that.executeChange("saturation", value, callback);});
 	}
 
 	var informationService = new Service.AccessoryInformation();
@@ -413,6 +431,7 @@ PhilipsHueAccessory.prototype = {
 		.setCharacteristic(Characteristic.SerialNumber, this.device.uniqueid)
 		.addCharacteristic(Characteristic.FirmwareRevision, this.device.swversion);
 
-	return [informationService, lightbulbService];
+    this.services = [informationService, lightbulbService];
+	  return this.services;
   }
 };

@@ -66,7 +66,8 @@ function PhilipsHuePlatform(log, config) {
 
            var accessory = that.deviceLookup[deviceId];
 
-           if (accessory !== null) {
+           if (accessory !== null &&
+               accessory !== undefined) {
              accessory.device = response.lights[deviceId];
              var device = accessory.device;
 
